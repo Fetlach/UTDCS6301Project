@@ -1,5 +1,6 @@
 import cryptography
 import sys
+import os
 from enum import Enum
 from source import FileEncrypter, FileDecrypter, KeyAssembler, KeyFragmentDistributor, KeyFragmenter
 
@@ -17,24 +18,24 @@ canaryFile_Content = 'This canary file is unencrypted.'
 # --- Canary file functions --- #
 def createCanaryFile(filePath: str, encryptionKey: keyType) -> bool:
     # - check if file path exists
-    filePathExists = False
+    filePathExists = os.path.exists(filePath)
     if (not filePathExists):
         return False
     
     # - check if canary file already exists at location
-    canaryFileExists = True
+    canaryFileExists = os.path.exists(os.path.join(filePath, canaryFile_Name))
     if (canaryFileExists):
         return False
     
     # - create and open canary file at path
-    with open(filePath.join(canaryFile_Name), "wb") as file:
+    with open(os.path.join(filePath, canaryFile_Name), "wb") as file:
         # - write contents
         file.write(canaryFile_Content)
 
         # - close the canary file
 
     # - encrypt the file; return if the operation was successful
-    return FileEncrypter.encryptFile(filePath.join(canaryFile_Name), encryptionKey)
+    return FileEncrypter.encryptFile(os.path.join(filePath, canaryFile_Name), encryptionKey)
 
 def isValidKey(filePath: str, encryptionKey: keyType) -> bool:
     # - check file exists
