@@ -1,55 +1,83 @@
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
-import ShamirSecretSharing
+from secretshare import Secret, SecretShare, Share
 
-# key_internal is AES-GCM-SIV and should be a string type
+def encode_secret_from_bytes(message) -> int:
+    return int.from_bytes(message, 'big')
+
+def encode_secret_from_string(message: str) -> int:
+    return int.from_bytes(message.encode('utf-8'),'big')
+
+def decode_secret_to_bytes(secret: int) -> any:
+    bit_length = secret.bit_length()  # Including sign bit.
+    byte_length = (bit_length + 7) // 8
+    return secret.to_bytes(byte_length, 'big')
+
+def decode_secret_to_string(secret: int) -> str:
+    bit_length = secret.bit_length() + 1  # Including sign bit.
+    byte_length = (bit_length + 7) // 8
+    return str(secret.to_bytes(byte_length, 'big').decode('utf-8'))
+
+# key_internal is AES-GCM-SIV and should be a bytes-type object
 # keys_public are RSA usng SHA256
-def fragmentKeyAndEncrypt(key_internal_int, keys_public, threshold_to_reconstruct: int) -> any:
+def fragmentKeyAndEncrypt(key_secret, keys_public, threshold: int) -> any:
     # - Check if threshold is less than the number of keys; can't split if not
-    if not (threshold_to_reconstruct <= len(keys_public)) :
+    if not (threshold <= len(keys_public)) :
         return False
-
-    # - Convert key to int for SSS implementation
-    #key_internal_int = int.from_bytes(key_internal.to_bytes(), 'big')
     
-    # - Try to split the key into shares
-    shares = ShamirSecretSharing.make_random_shares(key_internal_int, minimum=threshold_to_reconstruct, shares=len(keys_public))
-    shares_encrypted = []
+    # - Split the secret into shares
+    shamir = SecretShare(threshold, len(keys_public), secret=key_secret)
+    shares = shamir.split()
 
     # - On success, encrypt the shares using the external keys
-
-
-    for i in range(len(keys_public)):
-        shares_encrypted.append(
-            (i,
+    shares_encrypted = []
+    for i, share in enumerate(shares):
+        shares_encrypted.append((
+            share.point,
             keys_public[i].encrypt(
-                str(shares[i][1]).encode('utf-8'), 
+                str(share.value).encode('utf-8'), 
                 padding.OAEP(
                     mgf=padding.MGF1(algorithm=hashes.SHA256()),
                     algorithm=hashes.SHA256(),
                     label=None
                 )
             )
-            )
-        )
+        ))
     
     # - Return encrypted fragments
-    return shares
+    return shares_encrypted
 
-def decryptAndAssembleFragments(private_keys, fragments_encrypted) -> any:
+def decryptAndAssembleFragments(private_keys, fragments_encrypted, threshold: int, share_count: int) -> bytes:
     # - Decrypt fragments
+    shares = []
+    for i in range(len(private_keys)):
+        shares.append(
+            Share(
+                fragments_encrypted[i][0],
+                int(private_keys[i].decrypt(
+                    fragments_encrypted[i][1], 
+                    padding.OAEP(
+                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                        algorithm=hashes.SHA256(),
+                        label=None
+                    )
+                ).decode('utf-8'))
+            )
+        )
 
-    # - Assemble fragments
-    key_internal_int = ShamirSecretSharing.recover_secret(Fragments)
-    key_internal = bytes(key_internal_int).decode(utf-8)
-    return key_internal
+    # - Assemble fragments to bytes object (AESGCMSIV Key)
+    shamir = SecretShare(threshold, share_count, shares=shares)
+    secret = shamir.combine()
+    return secret
 
 def main():
-    message = "This is a sample key. No problemos!"
+    message = "This is a long message that could support a 256 bit key"
     print("input:", message)
-    my_key = int.from_bytes(message.encode('utf-8'), 'big')
+    my_key = message.encode('utf-8')
+    my_Secret = Secret(encode_secret_from_bytes(my_key))
 
+    # - create public and private keys
     public_keys = []
     private_keys = []
 
@@ -62,13 +90,12 @@ def main():
         public_keys.append(public_key)
         private_keys.append(private_key)
 
-    fragments_encrypted = fragmentKeyAndEncrypt(my_key, public_keys, len(public_keys) - 1)
-    print(fragments_encrypted)
+    fragments_encrypted = fragmentKeyAndEncrypt(my_Secret, public_keys, 4)
+    #print(fragments_encrypted)
 
-    my_key_recovered = decryptAndAssembleFragments(private_keys, fragments_encrypted)
+    my_key_recovered = decryptAndAssembleFragments(private_keys[:4], fragments_encrypted[:4], 4, 10)
 
-    message_recovered = bytes(my_key_recovered).decode('utf-8')
-    print("output:", message_recovered)
+    print("recovered:", decode_secret_to_string(my_key_recovered.value))
 
 if __name__ == "__main__":
     main()
