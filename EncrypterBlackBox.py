@@ -1,8 +1,8 @@
-import cryptography
+from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
 import sys
 import os
 from enum import Enum
-from source import FileEncrypter, FileDecrypter, KeyAssembler, KeyFragmentDistributor, KeyFragmenter
+from source import FileEncrypter, FileDecrypter, KeyFragmentDistributor, KeyFragmenter
 
 # --- Safety Principles --- #
 Debug_OutputGeneratedKey = False # This needs to be false for a secure run -> key should not be printed without this being true
@@ -14,6 +14,9 @@ keyType = int
 # !!! IMPORTANT - Should be static between runs; do not modify !!!
 canaryFile_Name = 'canary.txt'
 canaryFile_Content = 'This canary file is unencrypted.'
+
+
+
 
 # --- Canary file functions --- #
 def createCanaryFile(filePath: str, encryptionKey: keyType) -> bool:
@@ -60,7 +63,7 @@ def isValidKey(filePath: str, encryptionKey: keyType) -> bool:
 # Users provide a list of public keys
 
 def generateInternalKey_AESGCM() -> any:
-    key = True
+    key = AESGCMSIV.generate_key(bit_length=256)
     
     return key
 
@@ -76,7 +79,15 @@ def encryptionRoutine() -> bool:
 
     # - output key fragments
 
-    # - Once key is recoverable; begin encrypting files
+    # --- Once key is recoverable; begin encrypting files --- #
+
+    # - Create nonce generator
+    nonces = nonceGenerator()
+
+
+    currNonce = nonces.next()
+
+    # - Keep a log of files encrypted
 
     # - All files encrypted, so return
     return True
@@ -121,6 +132,7 @@ if __name__ == "__main__":
         case RunMode.ENCRYPT:
             encryptionRoutine()
         case RunMode.DECRYPT:
+            decryptionRoutine()
             pass
         case _:
             pass
