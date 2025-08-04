@@ -15,11 +15,8 @@ keyType = int
 canaryFile_Name = 'canary.txt'
 canaryFile_Content = 'This canary file is unencrypted.'
 
-
-
-
 # --- Canary file functions --- #
-def createCanaryFile(filePath: str, encryptionKey: keyType) -> bool:
+def createCanaryFile(filePath: str) -> bool:
     # - check if file path exists
     filePathExists = os.path.exists(filePath)
     if (not filePathExists):
@@ -36,9 +33,6 @@ def createCanaryFile(filePath: str, encryptionKey: keyType) -> bool:
         file.write(canaryFile_Content)
 
         # - close the canary file
-
-    # - encrypt the file; return if the operation was successful
-    return FileEncrypter.encryptFile(os.path.join(filePath, canaryFile_Name), encryptionKey)
 
 def isValidKey(filePath: str, encryptionKey: keyType) -> bool:
     # - check file exists
@@ -64,30 +58,59 @@ def isValidKey(filePath: str, encryptionKey: keyType) -> bool:
 
 def generateInternalKey_AESGCM() -> any:
     key = AESGCMSIV.generate_key(bit_length=256)
-    
     return key
 
-def encryptionRoutine() -> bool:
+def encryptionRoutine(currPath, filepathsToEncrypt, keys_public, threshold: int) -> bool:
     # - Generate our internal key
     Key_AESGCM = generateInternalKey_AESGCM()
     if (Debug_OutputGeneratedKey):
         print(Key_AESGCM)
 
-    # - fragment our key
+    # - Get public rsa keys from input
 
+    # - fragment our key
     # - encrypt our key fragments using provided public keys
+    shares_encrypted = KeyFragmenter.fragmentKeyAndEncrypt(Key_AESGCM, keys_public, threshold)
+
+
+    # --- Create metadata --- #
 
     # - output key fragments
+    KeyFragmentDistributor.output(shares_encrypted)
+
+    # - save decryption metadata
+
+    # - create canary file
+    canaryPath = os.path.join(filePath, canaryFile_Name)
+    createCanaryFile(currPath, Key_AESGCM)
+
 
     # --- Once key is recoverable; begin encrypting files --- #
 
-    # - Create nonce generator
-    nonces = nonceGenerator()
+    # - Create encryptor and begin encrypting
+    encryptor = FileEncrypter.FileEncrypter(Key_AESGCM)
 
+    # - encrypt canary file
+    try:
+        if(encryptor.encryptFile(canaryPath, paths.join(canaryPath, ".tmp"))): # create encrypted version in temporary file
+            FileEncrypter.zero_out_file(canaryPath) # zero-out original file to eliminate non-encrypted data
+            os.replace(paths.join(canaryPath, ".tmp"), canaryPath) # then overwrite the original on success
+    except:
+        return False # DO NOT ALLOW ENCRYPTION IF WE FAIL TO ADD A CANARY
 
-    currNonce = nonces.next()
+    # - encrypt rest of files
+    passed = False
+    for f_in in filepathsToEncrypt:
+        try:
+            passed = False
+            passed = encryptor.encryptFile(f_in, paths.join(f_in, ".tmp")) # create encrypted version in temporary file
+        except:
+            pass # recover
+        if passed:
+            FileEncrypter.zero_out_file(f_in) # zero-out original file to eliminate non-encrypted data
+            os.replace(paths.join(f_in, ".tmp"), f_in) # then overwrite the original on success
 
-    # - Keep a log of files encrypted
+        # - Keep a log of files encrypted?
 
     # - All files encrypted, so return
     return True
@@ -97,8 +120,11 @@ def decryptionRoutine() -> bool:
     # - Retrieve provided key fragments
 
     # - Combine key fragments into AES-GCM key
+    genKey = KeyFragmenter.decryptAndAssembleFragments(keys_private, shares_encrypted, threshold, share_count_orig)
 
     # - On success, try to decrypt canary file
+    if not isValidKey(canaryPath, genKey):
+        return False
 
     # - Check if decrypted canary file contents are expected
 

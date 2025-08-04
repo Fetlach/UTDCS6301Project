@@ -29,6 +29,8 @@ class FileEncryptor:
                     nonce = self.nonce_counter.next() # nonce is stored publicly
                     ct = self.aes.encrypt(nonce, chunk, associated_data=None)
                     f_out.write(nonce + ct)  # store nonce + ciphertext
+
+        return True
     
     def decrypt_file(self, in_path, out_path):
         with open(in_path, 'rb') as f_in:
@@ -40,4 +42,12 @@ class FileEncryptor:
                     ct = f_in.read(CHUNK_SIZE + 16)  # ciphertext + tag
                     pt = self.aes.decrypt(nonce, ct, associated_data=None)
                     fout.write(pt)
+        return True
 
+# --- helper functions --- #
+def zero_out_file(path):
+    with open(path, "r+b") as f:
+        length = os.fstat(f.fileno()).st_size
+        f.write(b'\x00' * length)
+        f.flush()
+        os.fsync(f.fileno())  # Ensure data is written
