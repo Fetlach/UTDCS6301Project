@@ -1,4 +1,5 @@
 from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
+import os
 
 # --- Types and Declarations --- #
 keyType = bytes
@@ -32,7 +33,7 @@ class FileEncryptor:
 
         return True
     
-    def decrypt_file(self, in_path, out_path):
+    def decrypt_file(self, in_path, out_path) -> bool:
         with open(in_path, 'rb') as f_in:
             with open(out_path, 'wb') as fout:
                 while True:
