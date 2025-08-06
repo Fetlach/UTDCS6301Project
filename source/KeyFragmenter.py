@@ -1,7 +1,9 @@
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import serialization
 from secretshare import Secret, SecretShare, Share
+import json
 
 def encode_secret_from_bytes(message) -> int:
     return int.from_bytes(message, 'big')
@@ -21,21 +23,26 @@ def decode_secret_to_string(secret: int) -> str:
 
 # key_internal is AES-GCM-SIV and should be a bytes-type object
 # keys_public are RSA usng SHA256
-def fragmentKeyAndEncrypt(key_secret, keys_public, threshold: int) -> any:
+def fragmentKeyAndEncrypt(key_secret, shares_json, threshold: int) -> json:
     # - Check if threshold is less than the number of keys; can't split if not
-    if not (threshold <= len(keys_public)) :
+    if not (threshold <= len(shares_json["public_keys"])) :
         return False
     
     # - Split the secret into shares
-    shamir = SecretShare(threshold, len(keys_public), secret=key_secret)
+    shamir = SecretShare(threshold, len(shares_json["public_keys"]), secret=key_secret)
     shares = shamir.split()
 
     # - On success, encrypt the shares using the external keys
-    shares_encrypted = []
+    # set up fields for JSON
+    j_shares = []
+    j_positions = []
+
     for i, share in enumerate(shares):
-        shares_encrypted.append((
-            share.point,
-            keys_public[i].encrypt(
+        j_positions.append(share.point)
+        j_shares.append(
+            serialization.load_pem_public_key(
+                shares_json["public_keys"][i]
+                ).encrypt(
                 str(share.value).encode('utf-8'), 
                 padding.OAEP(
                     mgf=padding.MGF1(algorithm=hashes.SHA256()),
@@ -43,25 +50,34 @@ def fragmentKeyAndEncrypt(key_secret, keys_public, threshold: int) -> any:
                     label=None
                 )
             )
-        ))
+        )
+
+    # - Assemble JSON
+    shares_json["shares"] = j_shares 
+    shares_json["share_positions"] = j_positions 
+    shares_json["numShares"] = len(j_shares)
     
     # - Return encrypted fragments
-    return shares_encrypted
+    return shares_json
 
-def decryptAndAssembleFragments(private_keys, fragments_encrypted, threshold: int, share_count: int) -> bytes:
+def decryptAndAssembleFragments(shares_json: json, threshold: int, share_count: int) -> bytes:
     # - Decrypt fragments
     shares = []
-    for i in range(len(private_keys)):
+    for i in range(threshold):
         shares.append(
             Share(
-                fragments_encrypted[i][0],
-                int(private_keys[i].decrypt(
-                    fragments_encrypted[i][1], 
-                    padding.OAEP(
-                        mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                        algorithm=hashes.SHA256(),
-                        label=None
-                    )
+                shares_json["share_positions"][i],
+                int(
+                    serialization.load_pem_private_key(
+                        shares_json["private_keys"][i],
+                        password=None
+                    ).decrypt(
+                        shares_json["shares"][i], 
+                        padding.OAEP(
+                            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                            algorithm=hashes.SHA256(),
+                            label=None
+                        )
                 ).decode('utf-8'))
             )
         )
@@ -86,14 +102,29 @@ def main():
             public_exponent=65537,
             key_size=2048,
         )
-        public_key = private_key.public_key()
+        public_key = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
         public_keys.append(public_key)
-        private_keys.append(private_key)
+        private_keys.append(private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()))
 
-    fragments_encrypted = fragmentKeyAndEncrypt(my_Secret, public_keys, 4)
-    #print(fragments_encrypted)
+    # - Create json container
+    shares_json = {
+        "public_keys": public_keys,
+        "private_keys": private_keys,
+        "shares": [],
+        "share_positions": [],
+        "numShares": []
+    }
+    #print(shares_json)
 
-    my_key_recovered = decryptAndAssembleFragments(private_keys[:4], fragments_encrypted[:4], 4, 10)
+    shares_json_encrypted = fragmentKeyAndEncrypt(my_Secret, shares_json, 4)
+
+    my_key_recovered = decryptAndAssembleFragments(shares_json_encrypted, 4, shares_json_encrypted['numShares'])
 
     print("recovered:", decode_secret_to_string(my_key_recovered.value))
 
