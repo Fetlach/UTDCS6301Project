@@ -67,7 +67,7 @@ def encrypt_msg(message, encrypt_sockets):
         encrypt_sockets[index].send(str(public_keys[index]).encode())
         encrypt_sockets[index].send((str(index)).encode())
         encrypt_sockets[index].send(str(item).encode())
-        print(item)
+        # print(item)
         encrypt_sockets[index].close()
         index += 1
     print("Encryption complete!")
@@ -108,6 +108,7 @@ while True:
             encrypt_msg(str(enc_msg), encrypt_sockets)
             # Clear encryption sockets
             encrypt_sockets = []
+            ports = 41399
 # end while
 
             

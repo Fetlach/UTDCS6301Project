@@ -5,7 +5,7 @@ import socket
 
 sock = socket.socket()
 port = 41398
-server_ip = "localhost"
+server_ip = "52.87.58.31"
 
 while True:
     print("Are you encrypting or decrypting a message? (Input e for encryption, d for decryption)")
