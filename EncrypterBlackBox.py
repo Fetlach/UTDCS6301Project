@@ -18,6 +18,7 @@ Debug_OutputGeneratedKey = False # This needs to be false for a secure run -> ke
 
 # --- setup --- #
 keyType = int
+keyFile_Name = "log_encryption.txt"
 
 # --- Canary file setup --- #
 # !!! IMPORTANT - Should be static between runs; do not modify !!!
@@ -73,34 +74,37 @@ def generateInternalKey_AESGCM() -> any:
     key = AESGCMSIV.generate_key(bit_length=256)
     return key
 
-def encryptionRoutine(currPath, filepathsToEncrypt, threshold: int) -> bool:
+def encryptionRoutine(json, filepathsToEncrypt, path_output) -> bool:
     # - Generate our internal key
-    testKey = generateInternalKey_AESGCM()
-    print(testKey)
-    Key_AESGCM = Secret(KeyFragmenter.encode_secret_from_bytes(testKey))
+    newKey = generateInternalKey_AESGCM()
+    Key_AESGCM = Secret(KeyFragmenter.encode_secret_from_bytes(newKey))
     if (Debug_OutputGeneratedKey):
+        print(newKey)
         print(Key_AESGCM)
 
+    # - Define expected paths
+    canaryPath = os.path.join(path_output, canaryFile_Name)
+    jsonPath = os.path.join(path_output, keyFile_Name)
+
     # - Get public rsa keys from input
-    if not os.path.exists(os.path.join(currPath, "log_encryption.txt")):
+    if not os.path.exists(jsonPath):
         return False
     
-    shares_PublicKeysOnly = KeyFragmentDistributor.deserializeJSON(currPath)
+    shares_PublicKeysOnly = json
 
     # - fragment our key
     # - encrypt our key fragments using provided public keys
-    shares_encrypted = KeyFragmenter.fragmentKeyAndEncrypt(Key_AESGCM, shares_PublicKeysOnly, threshold)
+    shares_encrypted = KeyFragmenter.fragmentKeyAndEncrypt(Key_AESGCM, shares_PublicKeysOnly, json["threshold"])
 
     # --- Create metadata --- #
 
     # - output key fragments
-    KeyFragmentDistributor.serializeJSON(currPath, shares_encrypted)
+    KeyFragmentDistributor.serializeJSON(jsonPath, shares_encrypted)
 
     # - save decryption metadata
 
     # - create canary file
-    canaryPath = os.path.join(currPath, canaryFile_Name)
-    createCanaryFile(currPath)
+    createCanaryFile(path_output)
 
     # --- Once key is recoverable; begin encrypting files --- #
 
@@ -122,14 +126,15 @@ def encryptionRoutine(currPath, filepathsToEncrypt, threshold: int) -> bool:
     # - encrypt rest of files
     passed = False
     for f_in in filepathsToEncrypt:
+        passed = False
         try:
-            passed = encryptor.encryptFile(f_in, os.path.join(f_in, ".tmp")) # create encrypted version in temporary file
+            passed = encryptor.encryptFile(f_in, (f_in + ".tmp")) # create encrypted version in temporary file
             passed = True
         except:
             pass # recover
         if passed:
             FileEncrypter.zero_out_file(f_in) # zero-out original file to eliminate non-encrypted data
-            os.replace(os.paths.join(f_in, ".tmp"), f_in) # then overwrite the original on success
+            os.replace((f_in + ".tmp"), f_in) # then overwrite the original on success
 
         # - Keep a log of files encrypted?
 
@@ -137,22 +142,36 @@ def encryptionRoutine(currPath, filepathsToEncrypt, threshold: int) -> bool:
     return True
 
 # --- Decryption routine functions --- #
-def decryptionRoutine(currPath) -> bool:
+def decryptionRoutine(json, path_canary:str, filepathsToDecrypt, path_output:str) -> bool:
     # - Retrieve provided key fragments; look for log_encryption.txt in the current directory
-    shares_encrypted = KeyFragmentDistributor.deserializeJSON(currPath)
+    #shares_encrypted = KeyFragmentDistributor.deserializeJSON(currPath)
 
     # - Combine key fragments into AES-GCM key
-    genKey = KeyFragmenter.decryptAndAssembleFragments(shares_encrypted, shares_encrypted["threshold"], shares_encrypted["numShares"])
+    #genKey = KeyFragmenter.decryptAndAssembleFragments(json, json["threshold"], json["numShares"])
+    genKey = KeyFragmenter.assembleFragments(json, json["threshold"], json["numShares"])
 
     # - On success, try to decrypt canary file
     # - Check if decrypted canary file contents are expected
-    if not isValidKey(os.path.join(currPath, canaryFile_Name), genKey.to_bytes()):
+    if not isValidKey(path_canary, genKey.to_bytes()):
         return False
 
     print("canary file decrypted successfully!")
-    
 
     # - Continue to file decryption
+    decryptor = FileEncrypter.FileEncryptor(genKey.to_bytes())
+    passed = False
+    for f_in in filepathsToDecrypt:
+        passed = False
+        try:
+            passed = decryptor.decryptFile(f_in, (f_in + ".tmp")) # create encrypted version in temporary file
+            passed = True
+        except:
+            pass # recover
+        if passed:
+            FileEncrypter.zero_out_file(f_in) # zero-out original file to eliminate non-encrypted data
+            os.replace((f_in + ".tmp"), f_in) # then overwrite the original on success
+
+        # - Keep a log of files decrypted?
 
     # - All files decrypted, so return
     return True
@@ -203,11 +222,119 @@ def deserializationTest():
     print("recovered:", KeyFragmenter.decode_secret_to_string(my_key_recovered.value))
     exit()
 
-# --- Main --- #
 class RunMode(Enum):
     NOT_PROVIDED = 1
     ENCRYPT = 2
     DECRYPT = 3
+
+defaultJSON = {
+    "public_keys": [],
+    "shares": [],
+    "share_positions": [],
+    "numShares": 0
+    "threshold": 0
+}
+
+class BlackBox_Encryption:
+    path_output = "" # canary is output to this path
+    json = defaultJSON
+    paths_to_execute = []
+
+    def __init__(self, path_output: str):
+        self.path_output = path_output
+
+    # - Json setup
+    def loadJson(self, path: str) -> bool:
+        if not os.path.exists(path):
+            return False
+        self.json = KeyFragmentDistributor.deserializeJSON(path)
+        return True
+
+    def addKey(self, key: bytes) -> bool:
+        self.json["public_keys"] = self.json["public_keys"].append(key)
+        return True
+
+    def setThreshold(self, threshold: int) -> bool:
+        if threshold < 3:
+            return False
+        self.json["threshold"] = threshold
+        return True
+
+    # - Routine
+    def finalize_and_encrypt(self) -> bool:
+        # - Check for problems
+        if self.json["threshold"] < 3: 
+            raise ValueError("BB_E: Threshold has to be greater than 3 to perform threshold decryption.")
+            return False
+        if self.json["threshold"] > len(self.json["public_keys"]):
+            raise ValueError("BB_E: Threshold must be less than or equal to the number of supplied keys.")
+            return False
+        if not os.path.exists(self.path_output):
+            raise ValueError("BB_E: Provided output path doesn't exist")
+            return False
+
+        # - Perform encryption routine
+        encryptionRoutine(self.json, self.paths_to_execute, self.path_output)
+        return True
+
+
+class BlackBox_Decryption:
+    path_output = ""
+    path_canary = ""
+    json = defaultJSON
+    paths_to_execute = []
+
+    def __init__(self, path_output: str, path_canary: str):
+        self.path_output = path_output
+        self.path_canary = path_canary
+
+    # - Json setup
+    def loadJson(self, path: str) -> bool:
+        if not os.path.exists(path):
+            return False
+        self.json = KeyFragmentDistributor.deserializeJSON(path)
+        return True
+
+    def setNumShares(self, numShares: int) -> bool:
+        if numShares < 3:
+            return False
+        self.json["numShares"] = numShares
+        return True
+
+    def setThreshold(self, threshold: int) -> bool:
+        if threshold < 3:
+            return False
+        self.json["threshold"] = threshold
+        return True
+        
+    def addShare(self, share_decrypted, position: int) -> bool:
+        self.json["shares"] = self.json["shares"].append(share_decrypted)
+        self.json["share_positions"] = self.json["share_positions"].append(position)
+        return True
+
+    # - Routine
+    def finalize_and_decrypt(self) -> bool:
+        # - Check for problems
+        if self.json["threshold"] < 3: 
+            raise ValueError("BB_D: Threshold has to be greater than 3 to perform threshold decryption.")
+            return False
+        if self.json["threshold"] > len(self.json["shares"]):
+            raise ValueError("BB_D: Not enough shares were provided.")
+            return False
+        if not os.path.exists(self.path_output):
+            raise ValueError("BB_D: Provided output path doesn't exist")
+            return False
+        if not os.path.exists(self.path_canary):
+            raise ValueError("BB_D: Canary not found at provided path.")
+            return False
+        
+        # Perform decryption routine
+        decryptionRoutine(self.json, self.path_canary, self.paths_to_execute, self.path_output)
+
+
+
+# --- Main --- #
+
 
 if __name__ == "__main__":
     # --- Testing ---

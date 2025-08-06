@@ -33,7 +33,7 @@ class FileEncryptor:
 
         return True
     
-    def decrypt_file(self, in_path, out_path) -> bool:
+    def decryptFile(self, in_path, out_path) -> bool:
         with open(in_path, 'rb') as f_in:
             with open(out_path, 'wb') as fout:
                 while True:

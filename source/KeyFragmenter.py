@@ -88,6 +88,18 @@ def decryptAndAssembleFragments(shares_json: json, threshold: int, share_count: 
     secret = shamir.combine()
     return secret
 
+# - Stripped-down version of above function to offload private key decryption
+def assembleFragments(shares_json: json, threshold: int, share_count: int) -> bytes:
+    # - Decrypt fragments
+    shares = []
+    for i in range(threshold):
+        shares.append(Share(shares_json["share_positions"][i], shares_json["shares"][i]))
+
+    # - Assemble fragments to bytes object (AESGCMSIV Key)
+    shamir = SecretShare(threshold, share_count, shares=shares)
+    secret = shamir.combine()
+    return secret
+
 def main():
     message = "This is a long message that could support a 256 bit key"
     print("input:", message)

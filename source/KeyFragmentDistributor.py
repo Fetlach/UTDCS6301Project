@@ -13,7 +13,7 @@ def serializeJSON(out_path, shares_encrypted: json) -> bool:
     for i in range(len(jsonCopy["shares"])):
         jsonCopy["shares"][i] = base64.b64encode(jsonCopy["shares"][i]).decode('utf-8')
 
-    with open(os.path.join(out_path, "log_encryption.txt"), 'w', encoding='utf-8') as f_out:
+    with open(out_path, 'w', encoding='utf-8') as f_out:
         json.dump(jsonCopy, f_out, indent=4)
     return True
 
@@ -25,7 +25,7 @@ def deserializeJSON(in_path) -> json:
         "share_positions": [],
         "numShares": []
     }
-    with open(os.path.join(in_path, "log_encryption.txt"), 'r') as f_in:
+    with open(out_path, 'r') as f_in:
         jsonCopy = json.load(f_in)
 
     for i in range(len(jsonCopy["public_keys"])):
