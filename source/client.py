@@ -5,7 +5,7 @@ import socket
 
 sock = socket.socket()
 port = 41398
-server_ip = "52.87.58.31"
+server_ip = "localhost"
 
 while True:
     print("Are you encrypting or decrypting a message? (Input e for encryption, d for decryption)")
@@ -26,6 +26,9 @@ match mode:
         message = input()
         print("Chosen string: " + message)
 
+        # Get the personal key
+        print("What is your public key?")
+        personalKey = input()
         # Connect to server and send intended message.
         print("Connecting to server at " + server_ip)
         sock = socket.socket()
@@ -60,10 +63,10 @@ match mode:
         print()
         print("Waiting for other members to join...")
 
-        # Receive personal key
+        # Deliver personal key
         print()
-        print("Receiving personal key...")
-        personalKey = sock_personal.recv(2048).decode()
+        print("Sending personal key...")
+        sock_personal.send(personalKey.encode())
         print(personalKey)
 
 

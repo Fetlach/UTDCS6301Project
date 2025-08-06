@@ -27,33 +27,21 @@ ports = 41399
 # Function that uses the current encrypt_sockets to create a shared key and encrypt.
 def encrypt_msg(message, encrypt_sockets):
     print("Encrypting!")
-    private_keys = []
     public_keys = []
     secret = message.encode('utf-8')
     my_secret = Secret(KeyFragmenter.encode_secret_from_bytes(secret))
 
+    index = 0
     for i in range(num_procs):
-        private_key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=2048,
-        )
-
-        public_key = private_key.public_key().public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
-
+        public_key = encrypt_sockets[index].recv(2048)
+        print(public_key)
         public_keys.append(public_key)
-        private_keys.append(private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=serialization.NoEncryption())
-        )
+        index += 1
 
     # Create json container
     shares_json = {
         "public_keys": public_keys,
-        "private_keys": private_keys,
+        "private_keys": [],
         "shares": [],
         "share_positions": [],
         "numShares": []
@@ -64,7 +52,6 @@ def encrypt_msg(message, encrypt_sockets):
     # Distribute shares amongst the processes
     index = 0
     for item in shares["shares"]:
-        encrypt_sockets[index].send(str(public_keys[index]).encode())
         encrypt_sockets[index].send((str(index)).encode())
         encrypt_sockets[index].send(str(item).encode())
         # print(item)
