@@ -56,6 +56,7 @@ def fragmentKeyAndEncrypt(key_secret, shares_json, threshold: int) -> json:
     shares_json["shares"] = j_shares 
     shares_json["share_positions"] = j_positions 
     shares_json["numShares"] = len(j_shares)
+    shares_json["threshold"] = threshold
     
     # - Return encrypted fragments
     return shares_json

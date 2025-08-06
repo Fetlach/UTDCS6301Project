@@ -27,7 +27,7 @@ class FileEncryptor:
         with open(in_path, 'rb') as f_in:
             with open(out_path, 'wb') as f_out:
                 while chunk := f_in.read(CHUNK_SIZE):
-                    nonce = self.nonce_counter.next() # nonce is stored publicly
+                    nonce = self.nonces.next() # nonce is stored publicly
                     ct = self.aes.encrypt(nonce, chunk, associated_data=None)
                     f_out.write(nonce + ct)  # store nonce + ciphertext
 

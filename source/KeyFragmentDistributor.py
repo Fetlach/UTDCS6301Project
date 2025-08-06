@@ -18,7 +18,13 @@ def serializeJSON(out_path, shares_encrypted: json) -> bool:
     return True
 
 def deserializeJSON(in_path) -> json:
-    jsonCopy = {}
+    jsonCopy = {
+        "public_keys": [],
+        "private_keys": [],
+        "shares": [],
+        "share_positions": [],
+        "numShares": []
+    }
     with open(os.path.join(in_path, "log_encryption.txt"), 'r') as f_in:
         jsonCopy = json.load(f_in)
 

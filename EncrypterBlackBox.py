@@ -32,12 +32,13 @@ def createCanaryFile(filePath: str) -> bool:
         return False
     
     # - check if canary file already exists at location
-    canaryFileExists = os.path.exists(os.path.join(filePath, canaryFile_Name))
-    if (canaryFileExists):
-        return False
+    #canaryFileExists = os.path.exists(os.path.join(filePath, canaryFile_Name))
+    #if (canaryFileExists):
+    #    return False
+    # update; we don't really care
     
     # - create and open canary file at path
-    with open(os.path.join(filePath, canaryFile_Name), "wb") as file:
+    with open(os.path.join(filePath, canaryFile_Name), "w") as file:
         # - write contents
         file.write(canaryFile_Content)
 
@@ -45,22 +46,22 @@ def createCanaryFile(filePath: str) -> bool:
 
 def isValidKey(filePath: str, encryptionKey: keyType) -> bool:
     # - check file exists
-    fileExists = False
+    fileExists = os.path.exists(filePath)
     if (not fileExists):
         return False
 
     # - open the file and decrypt
     encryptor = FileEncrypter.FileEncryptor(encryptionKey)
-    encryptor.decrypt_file(filePath, os.path.join(filePath, ".tmp"))
+    encryptor.decrypt_file(filePath, (filePath +".tmp"))
 
     # - open the temp file, check if it is good
     goodCanary = False
-    with os.path.join(filePath, ".tmp") as file:
+    with open(filePath + ".tmp") as file:
         fileContents = file.read()
         goodCanary = (fileContents == canaryFile_Content)
     
     # - cleanup
-    os.remove(os.path.join(filePath, ".tmp"))
+    os.remove(filePath + ".tmp")
 
     return goodCanary
 
@@ -72,55 +73,63 @@ def generateInternalKey_AESGCM() -> any:
     key = AESGCMSIV.generate_key(bit_length=256)
     return key
 
-def encryptionRoutine(currPath, filepathsToEncrypt, keys_public, threshold: int) -> bool:
+def encryptionRoutine(currPath, filepathsToEncrypt, threshold: int) -> bool:
     # - Generate our internal key
-    Key_AESGCM = generateInternalKey_AESGCM()
+    testKey = generateInternalKey_AESGCM()
+    print(testKey)
+    Key_AESGCM = Secret(KeyFragmenter.encode_secret_from_bytes(testKey))
     if (Debug_OutputGeneratedKey):
         print(Key_AESGCM)
 
     # - Get public rsa keys from input
+    if not os.path.exists(os.path.join(currPath, "log_encryption.txt")):
+        return False
+    
+    shares_PublicKeysOnly = KeyFragmentDistributor.deserializeJSON(currPath)
 
     # - fragment our key
     # - encrypt our key fragments using provided public keys
-    shares_encrypted = KeyFragmenter.fragmentKeyAndEncrypt(Key_AESGCM, keys_public, threshold)
-
+    shares_encrypted = KeyFragmenter.fragmentKeyAndEncrypt(Key_AESGCM, shares_PublicKeysOnly, threshold)
 
     # --- Create metadata --- #
 
     # - output key fragments
-    KeyFragmentDistributor.output(currPath, shares_encrypted)
+    KeyFragmentDistributor.serializeJSON(currPath, shares_encrypted)
 
     # - save decryption metadata
 
     # - create canary file
     canaryPath = os.path.join(currPath, canaryFile_Name)
-    createCanaryFile(currPath, Key_AESGCM)
-
+    createCanaryFile(currPath)
 
     # --- Once key is recoverable; begin encrypting files --- #
 
     # - Create encryptor and begin encrypting
-    encryptor = FileEncrypter.FileEncrypter(Key_AESGCM)
+    encryptor = FileEncrypter.FileEncryptor(Key_AESGCM.to_bytes())
+    #encryptor.encryptFile(canaryPath, canaryPath+".tmp")
 
     # - encrypt canary file
     try:
-        if(encryptor.encryptFile(canaryPath, os.paths.join(canaryPath, ".tmp"))): # create encrypted version in temporary file
+        if (encryptor.encryptFile(canaryPath, canaryPath+".tmp")): # create encrypted version in temporary file
             FileEncrypter.zero_out_file(canaryPath) # zero-out original file to eliminate non-encrypted data
-            os.replace(os.paths.join(canaryPath, ".tmp"), canaryPath) # then overwrite the original on success
+            os.replace(canaryPath+".tmp", canaryPath) # then overwrite the original on success
+        else: 
+            print("canary failed to encrypt")
     except:
+        print("canary failed to encrypt; there was a fatal error")
         return False # DO NOT ALLOW ENCRYPTION IF WE FAIL TO ADD A CANARY
 
     # - encrypt rest of files
     passed = False
     for f_in in filepathsToEncrypt:
         try:
-            passed = False
-            passed = encryptor.encryptFile(f_in, os.paths.join(f_in, ".tmp")) # create encrypted version in temporary file
+            passed = encryptor.encryptFile(f_in, os.path.join(f_in, ".tmp")) # create encrypted version in temporary file
+            passed = True
         except:
             pass # recover
         if passed:
             FileEncrypter.zero_out_file(f_in) # zero-out original file to eliminate non-encrypted data
-            os.replace(paths.join(f_in, ".tmp"), f_in) # then overwrite the original on success
+            os.replace(os.paths.join(f_in, ".tmp"), f_in) # then overwrite the original on success
 
         # - Keep a log of files encrypted?
 
@@ -130,15 +139,18 @@ def encryptionRoutine(currPath, filepathsToEncrypt, keys_public, threshold: int)
 # --- Decryption routine functions --- #
 def decryptionRoutine(currPath) -> bool:
     # - Retrieve provided key fragments; look for log_encryption.txt in the current directory
+    shares_encrypted = KeyFragmentDistributor.deserializeJSON(currPath)
 
     # - Combine key fragments into AES-GCM key
-    genKey = KeyFragmenter.decryptAndAssembleFragments(keys_private, shares_encrypted, threshold, share_count_orig)
+    genKey = KeyFragmenter.decryptAndAssembleFragments(shares_encrypted, shares_encrypted["threshold"], shares_encrypted["numShares"])
 
     # - On success, try to decrypt canary file
-    if not isValidKey(canaryPath, genKey):
+    # - Check if decrypted canary file contents are expected
+    if not isValidKey(os.path.join(currPath, canaryFile_Name), genKey.to_bytes()):
         return False
 
-    # - Check if decrypted canary file contents are expected
+    print("canary file decrypted successfully!")
+    
 
     # - Continue to file decryption
 
@@ -198,6 +210,15 @@ class RunMode(Enum):
     DECRYPT = 3
 
 if __name__ == "__main__":
+    # --- Testing ---
+    # - Run this to generate a list of public and private keys; the other data will be overwritten
+    # serializationTest()
+    # - Run this with a list of public keys to get an encrypted canary
+    # encryptionRoutine(os.getcwd(), [], 4)
+    # - Run this after the encryption routine and with the private keys & encoded shares to attempt to recover the canary
+    # decryptionRoutine(os.getcwd())
+    # exit() # - add this afterwards since the below code isn't finished
+
     # - Determine running mode from commandline arguments - #
     mode = RunMode.NOT_PROVIDED
     if (len(sys.argv) < 1):
