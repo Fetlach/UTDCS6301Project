@@ -28,9 +28,10 @@ canaryFile_Content = 'This canary file is unencrypted.'
 # --- Canary file functions --- #
 def createCanaryFile(filePath: str) -> bool:
     # - check if file path exists
-    filePathExists = os.path.exists(filePath)
-    if (not filePathExists):
-        return False
+    #filePathExists = os.path.exists(filePath)
+    #if (not filePathExists):
+    #    print("Couldn't find path for canary")
+    #    return False
     
     # - check if canary file already exists at location
     #canaryFileExists = os.path.exists(os.path.join(filePath, canaryFile_Name))
@@ -45,7 +46,7 @@ def createCanaryFile(filePath: str) -> bool:
 
         # - close the canary file
 
-def isValidKey(filePath: str, encryptionKey: keyType) -> bool:
+def isValidKey(filePath: str, encryptionKey) -> bool:
     # - check file exists
     fileExists = os.path.exists(filePath)
     if (not fileExists):
@@ -53,7 +54,7 @@ def isValidKey(filePath: str, encryptionKey: keyType) -> bool:
 
     # - open the file and decrypt
     encryptor = FileEncrypter.FileEncryptor(encryptionKey)
-    encryptor.decrypt_file(filePath, (filePath +".tmp"))
+    encryptor.decryptFile(filePath, (filePath +".tmp"))
 
     # - open the temp file, check if it is good
     goodCanary = False
@@ -87,8 +88,8 @@ def encryptionRoutine(json, filepathsToEncrypt, path_output) -> bool:
     jsonPath = os.path.join(path_output, keyFile_Name)
 
     # - Get public rsa keys from input
-    if not os.path.exists(jsonPath):
-        return False
+    #if not os.path.exists(jsonPath):
+    #    return False
     
     shares_PublicKeysOnly = json
 
@@ -148,17 +149,21 @@ def decryptionRoutine(json, path_canary:str, filepathsToDecrypt, path_output:str
 
     # - Combine key fragments into AES-GCM key
     #genKey = KeyFragmenter.decryptAndAssembleFragments(json, json["threshold"], json["numShares"])
+    print(json)
     genKey = KeyFragmenter.assembleFragments(json, json["threshold"], json["numShares"])
+    Key_AESGCM = Secret(KeyFragmenter.encode_secret_from_bytes(genKey)).to_bytes()
+    print(Key_AESGCM)
 
     # - On success, try to decrypt canary file
     # - Check if decrypted canary file contents are expected
-    if not isValidKey(path_canary, genKey.to_bytes()):
+    if not isValidKey(path_canary, Key_AESGCM):
+        print("Decryption routine: Key to canary wasn't valid")
         return False
 
     print("canary file decrypted successfully!")
 
     # - Continue to file decryption
-    decryptor = FileEncrypter.FileEncryptor(genKey.to_bytes())
+    decryptor = FileEncrypter.FileEncryptor(Key_AESGCM)
     passed = False
     for f_in in filepathsToDecrypt:
         passed = False
@@ -231,7 +236,7 @@ defaultJSON = {
     "public_keys": [],
     "shares": [],
     "share_positions": [],
-    "numShares": 0
+    "numShares": 0,
     "threshold": 0
 }
 
@@ -240,8 +245,9 @@ class BlackBox_Encryption:
     json = defaultJSON
     paths_to_execute = []
 
-    def __init__(self, path_output: str):
+    def __init__(self, path_output: str, execution_paths):
         self.path_output = path_output
+        self.paths_to_execute = execution_paths
 
     # - Json setup
     def loadJson(self, path: str) -> bool:
@@ -284,9 +290,10 @@ class BlackBox_Decryption:
     json = defaultJSON
     paths_to_execute = []
 
-    def __init__(self, path_output: str, path_canary: str):
+    def __init__(self, path_output: str, path_canary: str, execution_paths):
         self.path_output = path_output
         self.path_canary = path_canary
+        self.paths_to_execute = execution_paths
 
     # - Json setup
     def loadJson(self, path: str) -> bool:

@@ -1,19 +1,33 @@
 import EncrypterBlackBox
+from source import FileEncrypter, KeyFragmentDistributor, KeyFragmenter
+import json
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.ciphers.aead import AESGCMSIV
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+import sys
+import os
+from secretshare import Secret, SecretShare, Share
+import base64
 
 defaultJSON = {
     "public_keys": [],
     "shares": [],
     "share_positions": [],
-    "numShares": 10
+    "numShares": 10,
     "threshold": 4
 }
 
 encryptJson = defaultJSON
-decryptJson = defaultJSON
+decryptJson = encryptJson
 
 if __name__ == "__main__":
     public_keys = []
     private_keys = []
+    myEncryptJSON = encryptJson
+    myDecryptJSON = decryptJson
+
     for i in range(10):
         private_key = rsa.generate_private_key(
             public_exponent=65537,
@@ -28,9 +42,46 @@ if __name__ == "__main__":
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.TraditionalOpenSSL,
             encryption_algorithm=serialization.NoEncryption()))
+        
+    # - Store json that represents encryption method
+    myEncryptJSON["public_keys"] = public_keys
+    KeyFragmentDistributor.serializeJSON(os.path.join(os.getcwd(),"encryptJSON.txt"), myEncryptJSON)
 
-    newKey = generateInternalKey_AESGCM()
-    Key_AESGCM = Secret(KeyFragmenter.encode_secret_from_bytes(newKey))
+    # - Now test with black boxes
+    outPath = os.path.join(os.getcwd(), "testFolder")
+    BB_E = EncrypterBlackBox.BlackBox_Encryption(outPath, [])
+    BB_E.loadJson(os.path.join(os.getcwd(),"encryptJSON.txt"))
+    BB_E.finalize_and_encrypt()
 
-    KeyFragmentDistributor.serializeJSON(os.path.join(os.getcwd(),"encryptJSON.txt"), encryptJSON)
-    KeyFragmentDistributor.serializeJSON(os.path.join(os.getcwd(),"decryptJSON.txt"), encryptJSON)
+    # - This is where the encryption mode would return or start encrypting files
+    shares_encrypted = KeyFragmentDistributor.deserializeJSON(os.path.join(outPath, "log_encryption.txt"))
+
+    # - Then Decrypt shares (would be done by each user with their private key)
+    #shares_bytes = [base64.b64decode(s) for s in shares_encrypted["shares"]]
+    #myDecryptJSON["shares"] = shares_bytes[:myEncryptJSON["threshold"]]
+    shares = []
+    sharePositions = []
+    for i in range(max(len(shares_encrypted["shares"]), myEncryptJSON["threshold"])):
+        shares.append(serialization.load_pem_private_key(
+            private_keys[i],
+            password=None
+            ).decrypt(
+                shares_encrypted["shares"][i], 
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None
+                )
+            ))
+        sharePositions.append(shares_encrypted["share_positions"][i])
+
+        
+    myDecryptJSON["shares"] = shares
+    myDecryptJSON["share_positions"] = sharePositions
+    
+    KeyFragmentDistributor.serializeJSON(os.path.join(os.getcwd(),"decryptJSON.txt"), myDecryptJSON)
+
+    BB_D = EncrypterBlackBox.BlackBox_Decryption(outPath, os.path.join(outPath, "canary.txt"), [])
+    BB_D.loadJson(os.path.join(os.getcwd(),"decryptJSON.txt"))
+    #print(BB_D.json)
+    BB_D.finalize_and_decrypt()

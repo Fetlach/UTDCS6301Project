@@ -93,7 +93,7 @@ def assembleFragments(shares_json: json, threshold: int, share_count: int) -> by
     # - Decrypt fragments
     shares = []
     for i in range(threshold):
-        shares.append(Share(shares_json["share_positions"][i], shares_json["shares"][i]))
+        shares.append(Share(shares_json["share_positions"][i], int(shares_json["shares"][i])))
 
     # - Assemble fragments to bytes object (AESGCMSIV Key)
     shamir = SecretShare(threshold, share_count, shares=shares)
