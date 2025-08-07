@@ -24,6 +24,10 @@ encryptJson = defaultJSON
 decryptJson = encryptJson
 
 if __name__ == "__main__":
+    print("Demo started")
+    print("Press 'a' to generate public and private keys...")
+    keyboard.wait('a')
+
     public_keys = []
     private_keys = []
     myEncryptJSON = encryptJson
@@ -59,6 +63,12 @@ if __name__ == "__main__":
     BB_E.finalize_and_encrypt()
 
     print("Black box encryption finished")
+    print("Press 'a' destroy the black box...")
+    keyboard.wait('a')
+
+    del BB_E
+
+    print("Black box for encryption has been destroyed")
     print("Press 'a' to to decrypt the shares using private keys...")
     keyboard.wait('a')
 
