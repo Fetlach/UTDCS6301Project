@@ -5,8 +5,6 @@ import copy
 
 def serializeJSON(out_path, shares_encrypted: json) -> bool:
     jsonCopy = copy.deepcopy(shares_encrypted)
-    if len(jsonCopy["shares"]) > 0:
-        print(jsonCopy["shares"][0])
     
     # --- convert objects to json-compatible structure
     for i in range(len(jsonCopy["public_keys"])):
@@ -38,7 +36,5 @@ def deserializeJSON(in_path) -> json:
     for i in range(len(jsonCopy["shares"])):
         jsonCopy["shares"][i] = base64.b64decode(jsonCopy["shares"][i].encode('utf-8'))
 
-    if len(jsonCopy["shares"]) > 0:
-        print(jsonCopy["shares"][0])
     return jsonCopy
     

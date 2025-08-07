@@ -149,10 +149,8 @@ def decryptionRoutine(json, path_canary:str, filepathsToDecrypt, path_output:str
 
     # - Combine key fragments into AES-GCM key
     #genKey = KeyFragmenter.decryptAndAssembleFragments(json, json["threshold"], json["numShares"])
-    print(json)
     genKey = KeyFragmenter.assembleFragments(json, json["threshold"], json["numShares"])
     Key_AESGCM = Secret(KeyFragmenter.encode_secret_from_bytes(genKey)).to_bytes()
-    print(Key_AESGCM)
 
     # - On success, try to decrypt canary file
     # - Check if decrypted canary file contents are expected

@@ -10,6 +10,7 @@ import sys
 import os
 from secretshare import Secret, SecretShare, Share
 import base64
+import keyboard
 
 defaultJSON = {
     "public_keys": [],
@@ -47,11 +48,19 @@ if __name__ == "__main__":
     myEncryptJSON["public_keys"] = public_keys
     KeyFragmentDistributor.serializeJSON(os.path.join(os.getcwd(),"encryptJSON.txt"), myEncryptJSON)
 
+    print("Public keys generated")
+    print("Press 'a' to continue to black box encryption...")
+    keyboard.wait('a')
+
     # - Now test with black boxes
     outPath = os.path.join(os.getcwd(), "testFolder")
-    BB_E = EncrypterBlackBox.BlackBox_Encryption(outPath, [])
+    BB_E = EncrypterBlackBox.BlackBox_Encryption(outPath, [os.path.join(os.getcwd(), "testFolder","item.txt")a])
     BB_E.loadJson(os.path.join(os.getcwd(),"encryptJSON.txt"))
     BB_E.finalize_and_encrypt()
+
+    print("Black box encryption finished")
+    print("Press 'a' to to decrypt the shares using private keys...")
+    keyboard.wait('a')
 
     # - This is where the encryption mode would return or start encrypting files
     shares_encrypted = KeyFragmentDistributor.deserializeJSON(os.path.join(outPath, "log_encryption.txt"))
@@ -75,13 +84,15 @@ if __name__ == "__main__":
             ))
         sharePositions.append(shares_encrypted["share_positions"][i])
 
+    print("Share decryption finished")
+    print("Press 'a' to to recover the key and decrypt the files...")
+    keyboard.wait('a')
         
     myDecryptJSON["shares"] = shares
     myDecryptJSON["share_positions"] = sharePositions
     
     KeyFragmentDistributor.serializeJSON(os.path.join(os.getcwd(),"decryptJSON.txt"), myDecryptJSON)
 
-    BB_D = EncrypterBlackBox.BlackBox_Decryption(outPath, os.path.join(outPath, "canary.txt"), [])
+    BB_D = EncrypterBlackBox.BlackBox_Decryption(outPath, os.path.join(outPath, "canary.txt"), [os.path.join(os.getcwd(), "testFolder","item.txt")])
     BB_D.loadJson(os.path.join(os.getcwd(),"decryptJSON.txt"))
-    #print(BB_D.json)
     BB_D.finalize_and_decrypt()
